@@ -6,10 +6,10 @@ successful board games of all time. Game rules are widely available and
 standardized[^risk-rules].
 # General GamePlay Description
 A Risk game is played on a board arranged like a world map with 42 territories.
-![Risk map image](./risk-map.png)[^risk-strategy-mit]
+![Risk map image](./img/risk-map.png)[^risk-strategy-mit]
 It is frequently cited[^risk-strategy-mit] that a Risk game map is comprised of a
 graph with nodes and edges, making it highly amenable to AI agent gameplay.
-![Risk graph image](./risk-graph.png)[^risk-strategy-mit]
+![Risk graph image](./img/risk-graph.png)[^risk-strategy-mit]
 ## Game Sequence
 Gameplay in Risk is not overly complex, but is comprised of several phases each of
 which can be seen as a separate game in itself.
@@ -144,45 +144,74 @@ analyses/graphs for various game configurations. For example: do an analysis of
 This would allow reviewers to set up gameplay parameters via a browser window,
 start games and view them as they progress. Additional debug information may also
 be presented.
-## Building the Docker Container
-Something like this, where `airisk` is the container name we will build:
+
+## Build and Run
+
+### Build the Docker Image
+
+Required since we're not currently pulling a pre-built image off a server. 
+
+```bash
+docker build -t risk .
 ```
-# build the container
-docker build -t airisk .
+
+In the future we might provide a pre-built image to make running easier if we're inclined.
+
+### Run the Docker Container (default entry point)
+
+Runs `src/main.py`. Use `--rm` so the container is removed when it exits:
+
+The default entry point is specified in the `Dockerfile`. Change as needed.
+
+```bash
+docker run --rm risk
 ```
-## Running the Game Via Default Configuration
-It is suggested the docker container be configured to by default run a "headless"
-simple version of the game.
+
+### Edit/Run Local Files Mounted to the Container (run without rebuilding container)
+
+If we mount the local source directories into the Docker container we can edit and run them without having to rebuild the container. If we start `bash` in the container we can then iteratively edit/run/edit for faster development if you want to do that.
+
+```bash
+docker run --rm -it -v "$(pwd):/app" -w /app risk bash
 ```
-# run the container
-docker run --rm -p 5000:5000 airisk
+
+### To Run Specific Python Files (not necessarily the default)
+
+With no extra arguments:
+
+```bash
+docker run --rm risk python src/your_script.py
 ```
-## Running the Game With Additional Command Line Parameters
-It should be possible to run custom setups via command line, to, say, use specific
-AI agents.
+
+With optional arguments passed to your script:
+
+```bash
+docker run --rm risk python src/your_script.py --option value
 ```
-# custom "headless" (i.e no gui) run
-docker run --rm airisk python main.py --agents agent1 agent1 --games 100
+
+### Run the example Jupyter notebook
+
+Start Jupyter in the container and expose port 8888 (`--rm` removes the container when you stop it):
+
+```bash
+docker run --rm -p 127.0.0.1:8888:8888 risk \
+    jupyter notebook --ip=0.0.0.0 --allow-root \
+    --NotebookApp.token='' --NotebookApp.password=''
 ```
-## Running a Jupyter Notebook Analyis
-To facilitate analysis and graphing, we should support running the game code inside
-Jupyter notebooks. Setup for that would presumably be in our Dockerfile, but
-running an analysis could then be like:
-```
-# start a jupyter notebook server and run `analysis.ipynb`
-docker run -p 8888:8888 airisk jupyter notebook analysis.ipynb --ip=0.0.0.0 --no-
-browser --allow-root
-```
-Reviewers could then open their browser to a known localhost port and read the
-analysis.
-## Running via a Dashboard
-As the project requires a dashboard, I propose doing an HTML based dashboard via
-python `flask`. This would allow reviewers to set up games and see them play out in
-an HTML page in a very visual way.
-I'd suggest running it via:
-```
-docker run --rm -it -p 5000:5000 airisk python web_dashboard.py <possible options>
-```
+
+Then:
+
+1. Open a browser and go to **http://localhost:8888**. You should something like:
+
+![jupyter file tree](./img/jupyter-tree.png)
+
+2. In the file browser, open **notebooks** → **example.ipynb** (or whatever you file wish), and run the cells as normal.
+
+![jupyter example](./img/jupyter-example.png)
+
+The command above circumvents the use of tokens/password for simplicity. If you want to use them, then remove those arguments and when for a token, copy the `?token=...` URL from the terminal output and use that, or paste the token into the login field.
+
+
 # Citations and Other Sources
 [^risk-wiki]: https://en.wikipedia.org/wiki/Risk_(game)
 [^risk-rules]: https://www.hasbro.com/common/instruct/risk.pdf
