@@ -1,0 +1,11 @@
+# don't include .git history in the docker image
+.git
+
+# don't include python intermediate files or bytecode in the image.
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Also don't bring in Jupyter autosaves if there are any.
+.ipynb_checkpoints
