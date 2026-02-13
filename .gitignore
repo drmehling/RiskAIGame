@@ -2,3 +2,12 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .env
+
+# macos
+.DS_Store
+
+# virtualenvironments
+.venv/
+
+# IDEs
+.vscode/
