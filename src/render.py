@@ -121,7 +121,10 @@ def render_state(territory_fills, territory_text, width=None):
 
 # The primary method to render our GameState into an SVG.
 # Returns the SVG as bytes for easy display.
+# Accepts either a GameState or a dict from game_state_to_render_dict().
 def render_state_from_game_state(state, player_colors=None, width=None):
+    if not isinstance(state, dict):
+        state = game_state_to_render_dict(state)
     # colors via: https://flatuicolors.com/palette/defo
     # Update them as you like.
     default_colors = ["#3498db", "#f1c40f", "#e74c3c", "#27ae60",  "#9b59b6", "#1abc9c"]
