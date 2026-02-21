@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 import random
-from action import Phase, DeployAction, AttackAction, FortifyAction, EndPhaseAction
+from .action import Phase, DeployAction, AttackAction, FortifyAction, EndPhaseAction
 
 
 class Agent(ABC):
