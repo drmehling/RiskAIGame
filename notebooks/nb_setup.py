@@ -14,9 +14,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Re-export commonly used items for convenience
-# TODO: improve this when we have a correct module import structure in src/.
-from game_state import GameState
-from render import (
+from risk_ai_game import (
+    GameState,
     render_state,
     render_state_from_game_state,
 )

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Run a game of Risk between AI agents."""
 
-from game_state import GameState
-from agent import RandomAgent, AggressiveAgent
-from action import AttackAction
+from risk_ai_game import GameState, RandomAgent, AggressiveAgent, AttackAction
 
 
 def run_game(agents, max_turns=500, verbose=True):
