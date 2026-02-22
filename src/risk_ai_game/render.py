@@ -143,7 +143,7 @@ def render_state_from_game_state(state, player_colors=None, width=None):
 
 # Find the map .svg. It's part of the package, so it shouldn't go missing ever.
 def find_svg_path():
-    p = Path(__file__).resolve().parent / "assets" / "risk.map.svg"
+    p = Path(__file__).resolve().parent.parent / "assets" / "risk.map.svg"
     if not p.exists():
         raise FileNotFoundError(f"SVG not found at {p}")
     return p

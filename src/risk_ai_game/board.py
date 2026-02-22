@@ -1,4 +1,4 @@
-from territory import Territory
+from .territory import Territory
 
 TERRITORIES = [
     ("Alaska", "North America", ["Northwest Territory", "Alberta", "Kamchatka"]),

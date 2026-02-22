@@ -1,7 +1,7 @@
 """Game state and logic for Risk."""
 
-from board import Board
-from action import Phase, DeployAction, AttackAction, FortifyAction, EndPhaseAction
+from .board import Board
+from .action import Phase, DeployAction, AttackAction, FortifyAction, EndPhaseAction
 import random
 
 # continent bonuses (from the rulebook)
