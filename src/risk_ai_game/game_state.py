@@ -190,7 +190,12 @@ class GameState:
         return {"phase_ended": self.phase.name}
 
     def _advance_turn(self):
-        self.current_player = (self.current_player + 1) % self.num_players
+        # We must ensure that the next player is still in the game,
+        # so we search through players until we find one that is still in the game.
+        next_player = (self.current_player + 1) % self.num_players
+        while len(self.get_player_territories(next_player)) == 0:
+            next_player = (next_player + 1) % self.num_players
+        self.current_player = next_player
         self.phase = Phase.DEPLOY
         self.armies_to_deploy = self.get_reinforcements(self.current_player)
         self.turn_number += 1
