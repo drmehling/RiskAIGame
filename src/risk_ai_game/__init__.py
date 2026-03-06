@@ -5,5 +5,7 @@ from risk_ai_game.agent import Agent, RandomAgent, AggressiveAgent
 from risk_ai_game.board import Board
 from risk_ai_game.game_state import GameState, CONTINENT_BONUSES
 from risk_ai_game.render import render_state, render_state_from_game_state, game_state_to_render_dict
+from risk_ai_game.options import RiskAIGameOptions
 from risk_ai_game.run import run_game
+from risk_ai_game.telemetry import GameInitialFinalStates, GameTelemetry, TerritoryCountCollector, TurnCountCollector
 from risk_ai_game.territory import Territory
