@@ -48,6 +48,45 @@ BOARD_NAME_TO_SVG_ID = {
     "Eastern Australia": "eastern_australia",
 }
 
+PLAYER_COLORS = [
+    "#C94A44",  # red
+    "#4C78A8",  # blue
+    "#59A14F",  # green
+    "#E3B23C",  # yellow
+    "#8E6BBE",  # purple
+    "#2F2F2F",  # black
+]
+
+
+def last_action_to_render_dict(action, result):
+    """Build last_action dict for dashboard API (attack or reinforce)."""
+    if action is None or result is None:
+        return None
+    from .action import AttackAction, DeployAction
+    if isinstance(action, AttackAction):
+        from_svg = BOARD_NAME_TO_SVG_ID.get(action.from_territory)
+        to_svg = BOARD_NAME_TO_SVG_ID.get(action.to_territory)
+        if from_svg is None or to_svg is None:
+            return None
+        return {
+            "type": "attack",
+            "from": from_svg,
+            "to": to_svg,
+            "attacker_losses": result.get("attacker_losses", 0),
+            "defender_losses": result.get("defender_losses", 0),
+            "conquered": result.get("conquered", False),
+        }
+    if isinstance(action, DeployAction):
+        svg_id = BOARD_NAME_TO_SVG_ID.get(action.territory)
+        if svg_id is None:
+            return None
+        return {
+            "type": "reinforce",
+            "territory": svg_id,
+            "armies": action.armies,
+        }
+    return None
+
 
 # Convert GameState to a dictionary useable by rendering code below.
 def game_state_to_render_dict(game_state):
@@ -94,6 +133,12 @@ def render_state(territory_fills, territory_text, width=None):
                 path_el.set("fill", color)
                 set_style_attr(path_el, "fill", color)
 
+    # White outline on text improves readability on dark territory fills.
+    # paint-order: stroke fill = stroke drawn first, fill on top.
+    def set_text_outline(text_el):
+        for key, val in (("stroke", "#ffffff"), ("stroke-width", "0.7"), ("paint-order", "stroke fill")):
+            set_style_attr(text_el, key, val)
+
     for text_key, value in territory_text.items():
         terr_id = text_key.rstrip("_count") if text_key.endswith("_count") else text_key
         groups = root.xpath(f'//*[local-name()="g" and @id="{terr_id}"]')
@@ -101,6 +146,7 @@ def render_state(territory_fills, territory_text, width=None):
             text_el = get_text_in_group(groups[0])
             if text_el is not None:
                 text_el.text = str(value)
+                set_text_outline(text_el)
 
     # We also set the width of the SVG here as it seems like the most robust way to control it.
     if width is not None:
@@ -125,10 +171,7 @@ def render_state(territory_fills, territory_text, width=None):
 def render_state_from_game_state(state, player_colors=None, width=None):
     if not isinstance(state, dict):
         state = game_state_to_render_dict(state)
-    # colors via: https://flatuicolors.com/palette/defo
-    # Update them as you like.
-    default_colors = ["#3498db", "#f1c40f", "#e74c3c", "#27ae60",  "#9b59b6", "#1abc9c"]
-    colors = player_colors or default_colors
+    colors = player_colors or PLAYER_COLORS
 
     territory_fills = {}
     territory_text = {}

@@ -24,10 +24,12 @@ class GameState:
         self.armies_to_deploy = 0
         self.turn_number = 0
 
-    def setup_random(self):
+    # TODO: random seeed support is present, but not tested.
+    def setup_random(self, seed=None):
         """Randomly deal out territories and put 1 army on each."""
+        rng = random.Random(seed) if seed is not None else random
         territories = self.board.all_territories()
-        random.shuffle(territories)
+        rng.shuffle(territories)
         for i, t in enumerate(territories):
             t.owner = i % self.num_players
             t.armies = 1
