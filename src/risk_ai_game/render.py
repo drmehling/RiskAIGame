@@ -133,12 +133,6 @@ def render_state(territory_fills, territory_text, width=None):
                 path_el.set("fill", color)
                 set_style_attr(path_el, "fill", color)
 
-    # White outline on text improves readability on dark territory fills.
-    # paint-order: stroke fill = stroke drawn first, fill on top.
-    def set_text_outline(text_el):
-        for key, val in (("stroke", "#ffffff"), ("stroke-width", "0.7"), ("paint-order", "stroke fill")):
-            set_style_attr(text_el, key, val)
-
     for text_key, value in territory_text.items():
         terr_id = text_key.rstrip("_count") if text_key.endswith("_count") else text_key
         groups = root.xpath(f'//*[local-name()="g" and @id="{terr_id}"]')
@@ -146,7 +140,6 @@ def render_state(territory_fills, territory_text, width=None):
             text_el = get_text_in_group(groups[0])
             if text_el is not None:
                 text_el.text = str(value)
-                set_text_outline(text_el)
 
     # We also set the width of the SVG here as it seems like the most robust way to control it.
     if width is not None:
