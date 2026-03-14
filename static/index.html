@@ -71,9 +71,9 @@
     // The state structure represents the game state as reported by the server.
     // last_action: attack = red/orange outlines; reinforce = green outline. Default: no outline.
     const BATTLE_STROKE_WIDTH = 1.8;
-    const ATTACKER_OUTLINE = '#ff3333';   // bright red
-    const DEFENDER_OUTLINE = '#ff9900';   // bright orange
-    const REINFORCE_OUTLINE = '#22cc44';  // bright green
+    const ATTACKER_OUTLINE = '#ff3333'; // bright red
+    const DEFENDER_OUTLINE = '#ff9900'; // bright orange
+    const REINFORCE_OUTLINE = '#22cc44'; // bright green
 
     function setPathStroke(path, color, width) {
       const style = path.getAttribute('style') || '';
@@ -174,25 +174,36 @@
       });
     }
 
-    // Tell the server to start a game.
-    async function apiStart() {
-      const numPlayers = parseInt(document.getElementById('num-players').value, 10);
-      const res = await fetch('/api/start', {
+    // update the UI with the latest game state.
+    function updateUI(data) {
+      updateMapState(data.state || {}, data.last_action);
+      updateGameStateIndicators(data);
+    }
+
+    // send an HTTP POST request to the API.
+    async function apiPost(path, body) {
+      const res = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ num_players: numPlayers }),
+        body: body ? JSON.stringify(body) : undefined,
       });
+      if (res.status === 409) return null;
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      updateMapState(data.state, data.last_action);
-      updateGameStateIndicators(data);
+      return res.json();
+    }
+
+    // tell the server to start a new game.
+    async function apiStart() {
+      const numPlayers = parseInt(document.getElementById('num-players').value, 10);
+      const data = await apiPost('/api/start', { num_players: numPlayers });
+      updateUI(data);
       setStatus('Game started. Single step or enable free run.');
     }
 
-    // Tell the server to stop the game.
+    // tell the server to stop the current game.
     async function apiStop() {
-      await fetch('/api/stop', { method: 'POST' });
-      updateGameStateIndicators({ turn_number: 0, num_players: 2, current_player: -1, phase: '' });
+      await apiPost('/api/stop');
+      updateUI({ turn_number: 0, num_players: 2, current_player: -1, phase: '' });
       setStatus('Game stopped. Map unchanged. Start again to reset.');
       if (freeRunTimer) {
         clearInterval(freeRunTimer);
@@ -201,17 +212,14 @@
       freeRunCheckbox.checked = false;
     }
 
-    // Tell the server to step the game by one action.
+    // tell the server to step the game forward one "action".
     async function apiStep() {
-      const res = await fetch('/api/step', { method: 'POST' });
-      if (res.status === 409) {
+      const data = await apiPost('/api/step');
+      if (!data) {
         setStatus('Cannot step: game not running. Press Start Game.');
         return null;
       }
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      updateMapState(data.state, data.last_action);
-      updateGameStateIndicators(data);
+      updateUI(data);
       return data;
     }
 
@@ -238,34 +246,22 @@
       }
     }
 
-    //on start button click.
-    btnStart.addEventListener('click', async () => {
-      try {
-        await apiStart();
-      } catch (e) {
-        setStatus('Error: ' + e.message);
-      }
-    });
+    function withErrorHandling(fn) {
+      return async () => {
+        try {
+          await fn();
+        } catch (e) {
+          setStatus('Error: ' + e.message);
+        }
+      };
+    }
 
-    // On stop button click.
-    btnStop.addEventListener('click', async () => {
-      try {
-        await apiStop();
-      } catch (e) {
-        setStatus('Error: ' + e.message);
-      }
-    });
+    // wire up the buttons to the API calls.
+    btnStart.addEventListener('click', withErrorHandling(apiStart));
+    btnStop.addEventListener('click', withErrorHandling(apiStop));
+    btnStep.addEventListener('click', withErrorHandling(apiStep));
 
-    // On single step button click.
-    btnStep.addEventListener('click', async () => {
-      try {
-        await apiStep();
-      } catch (e) {
-        setStatus('Error: ' + e.message);
-      }
-    });
-
-    // On free run checkbox change.
+    // on free run checkbox change.
     freeRunCheckbox.addEventListener('change', () => {
       if (freeRunCheckbox.checked) startFreeRun();
       else stopFreeRun();
