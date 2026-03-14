@@ -187,8 +187,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       });
-      if (res.status === 409) return null;
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text);
+          if (j.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+        } catch (_) {}
+        throw new Error(msg || res.statusText);
+      }
       return res.json();
     }
 
@@ -215,10 +222,6 @@
     // tell the server to step the game forward one "action".
     async function apiStep() {
       const data = await apiPost('/api/step');
-      if (!data) {
-        setStatus('Cannot step: game not running. Press Start Game.');
-        return null;
-      }
       updateUI(data);
       return data;
     }
@@ -228,12 +231,19 @@
     function startFreeRun() {
       if (freeRunTimer) return;
       freeRunTimer = setInterval(async () => {
-        const data = await apiStep();
-        if (!data || !data.running) {
+        try {
+          const data = await apiStep();
+          if (!data || !data.running) {
+            clearInterval(freeRunTimer);
+            freeRunTimer = null;
+            freeRunCheckbox.checked = false;
+            if (data && !data.running) setStatus('Game ended. Press Start Game to play again.');
+          }
+        } catch (e) {
           clearInterval(freeRunTimer);
           freeRunTimer = null;
           freeRunCheckbox.checked = false;
-          if (data && !data.running) setStatus('Game ended. Press Start Game to play again.');
+          setStatus('Error: ' + e.message);
         }
       }, 1000);
     }
