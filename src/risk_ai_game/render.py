@@ -57,9 +57,8 @@ PLAYER_COLORS = [
     "#2F2F2F",  # black
 ]
 
-
+# generate a dictionary which describes "last action taken"
 def last_action_to_render_dict(action, result):
-    """Build last_action dict for dashboard API (attack or reinforce)."""
     if action is None or result is None:
         return None
     from .action import AttackAction, DeployAction

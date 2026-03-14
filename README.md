@@ -191,13 +191,13 @@ docker run --rm risk python src/your_script.py --option value
 
 ### Running the Dashboard App
 
-Run the web dashboard in the container (expose port 8000):
+Run the web dashboard in the container, which we make available on port 8000, though it could be any.
 
 ```bash
 docker run --rm -p 127.0.0.1:8000:8000 risk uvicorn src.dashboard:app --host 0.0.0.0 --port 8000
 ```
 
-Then open **http://localhost:8000** in your browser.
+Then open http://localhost:8000 in your browser.
 
 ### Run the example Jupyter notebook
 

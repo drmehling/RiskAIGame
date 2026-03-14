@@ -6,7 +6,6 @@ See README to run in docker or locally: uvicorn src.dashboard:app --host 0.0.0.0
 
 from __future__ import annotations
 
-import random
 import sys
 from pathlib import Path
 
@@ -43,8 +42,7 @@ class GameRunner:
     # TODO: I want to be careful about how much time we invest in the dashboard as it's a time sink.
     # Deeper analyses should be done in jupyter notebooks, as they allow zero overhead, reproducable setup.
     # That said, I think I may in time add a way to set up specific player agents. But not yet.
-    # TODO: seed support is here, but not yet tested.
-    def start(self, num_players: int = 2, seed: int | None = None) -> GameState | None:
+    def start(self, num_players: int = 2) -> GameState | None:
         self._stopped = False
         self._last_action = None
         self._last_result = None
@@ -53,9 +51,7 @@ class GameRunner:
             for i in range(num_players)
         ]
         self._game = GameState(num_players=num_players)
-        if seed is not None:
-            random.seed(seed)
-        self._game.setup_random(seed=seed)
+        self._game.setup_random()
         return self._game
 
     # Stop a game.
@@ -103,7 +99,6 @@ _game: GameRunner | None = None
 
 class InitSettings(BaseModel):
     num_players: int = 2
-    seed: int | None = None
 
     def to_dict(self) -> dict:
         return self.model_dump(exclude_none=False)
@@ -143,10 +138,7 @@ def api_start(settings: InitSettings | None = None) -> dict:
     global _game
     _game = GameRunner(max_turns=1000)
     opts = settings.to_dict() if settings else {}
-    game = _game.start(
-        num_players=opts.get("num_players", 2),
-        seed=opts.get("seed"),
-    )
+    game = _game.start(num_players=opts.get("num_players", 2))
     return _api_response(game, True)
 
 # on client /api/stop request, stop the game.
