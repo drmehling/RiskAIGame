@@ -1,7 +1,5 @@
 """Run a game of Risk between AI agents."""
 
-import random
-
 from .action import AttackAction
 from .game_state import GameState
 from .options import RiskAIGameOptions
@@ -11,8 +9,6 @@ from .options import RiskAIGameOptions
 # Returns the index of the winning player in the agent list, or -1 for a tie.
 def run_game(opts: RiskAIGameOptions) -> int:
     agents = opts.agents
-    if opts.random_seed is not None:
-        random.seed(opts.random_seed)
 
     game = GameState(num_players=len(agents))
     if opts.initial_board_setup is not None:

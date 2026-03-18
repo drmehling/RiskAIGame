@@ -48,6 +48,44 @@ BOARD_NAME_TO_SVG_ID = {
     "Eastern Australia": "eastern_australia",
 }
 
+PLAYER_COLORS = [
+    "#C94A44",  # red
+    "#4C78A8",  # blue
+    "#59A14F",  # green
+    "#E3B23C",  # yellow
+    "#8E6BBE",  # purple
+    "#2F2F2F",  # black
+]
+
+# generate a dictionary which describes "last action taken"
+def last_action_to_render_dict(action, result):
+    if action is None or result is None:
+        return None
+    from .action import AttackAction, DeployAction
+    if isinstance(action, AttackAction):
+        from_svg = BOARD_NAME_TO_SVG_ID.get(action.from_territory)
+        to_svg = BOARD_NAME_TO_SVG_ID.get(action.to_territory)
+        if from_svg is None or to_svg is None:
+            return None
+        return {
+            "type": "attack",
+            "from": from_svg,
+            "to": to_svg,
+            "attacker_losses": result.get("attacker_losses", 0),
+            "defender_losses": result.get("defender_losses", 0),
+            "conquered": result.get("conquered", False),
+        }
+    if isinstance(action, DeployAction):
+        svg_id = BOARD_NAME_TO_SVG_ID.get(action.territory)
+        if svg_id is None:
+            return None
+        return {
+            "type": "reinforce",
+            "territory": svg_id,
+            "armies": action.armies,
+        }
+    return None
+
 
 # Convert GameState to a dictionary useable by rendering code below.
 def game_state_to_render_dict(game_state):
@@ -125,10 +163,7 @@ def render_state(territory_fills, territory_text, width=None):
 def render_state_from_game_state(state, player_colors=None, width=None):
     if not isinstance(state, dict):
         state = game_state_to_render_dict(state)
-    # colors via: https://flatuicolors.com/palette/defo
-    # Update them as you like.
-    default_colors = ["#3498db", "#f1c40f", "#e74c3c", "#27ae60",  "#9b59b6", "#1abc9c"]
-    colors = player_colors or default_colors
+    colors = player_colors or PLAYER_COLORS
 
     territory_fills = {}
     territory_text = {}

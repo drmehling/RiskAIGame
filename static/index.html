@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Risk Game Demo</title>
+  <style>
+    /* We can improve the general look of the dashboard by adding some simple CSS here. */
+  </style>
+</head>
+<body>
+  <h1>Risk Dashboard</h1>
+  <!-- basic start/stop/step buttons. See below for event handlers. -->
+  <p class="status" id="status">Press Start Game.</p>
+  <div class="controls">
+    <label>
+      Players:
+      <select id="num-players">
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+    </label>
+    <button type="button" id="btn-start">Start Game</button>
+    <button type="button" id="btn-stop">Stop Game</button>
+    <button type="button" id="btn-step">Single Step</button>
+    <label>
+      <input type="checkbox" id="free-run" /> Free run (1 step/sec)
+    </label>
+  </div>
+  <!-- The SVG map updated at runtime with the game state. -->
+  <object id="map-container" data="/assets/risk.map.svg" type="image/svg+xml"></object>
+
+  <div id="game-state" style="display: flex; flex-direction: column; gap: 0.5rem;">
+    <div style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+      <span>Turn:</span>
+      <span id="turn-number">0</span>
+    </div>
+    <div style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+      <span>Players:</span>
+      <div id="players-list" style="display: flex; flex-direction: row; gap: 0.5rem;"></div>
+    </div>
+    <div style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+      <span>Phase:</span>
+      <div id="phase-list" style="display: flex; flex-direction: row; gap: 0.5rem;">
+        <div id="phase-reinforce">Reinforce</div>
+        <div id="phase-attack">Attack</div>
+        <div id="phase-fortify">Fortify</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PLAYER_COLORS = ['#C94A44', '#4C78A8', '#59A14F', '#E3B23C', '#8E6BBE', '#2F2F2F'];
+    let freeRunTimer = null;
+    const mapContainer = document.getElementById('map-container');
+    const statusEl = document.getElementById('status');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+    const btnStep = document.getElementById('btn-step');
+    const freeRunCheckbox = document.getElementById('free-run');
+
+    function getSvgRoot() {
+      const doc = mapContainer.contentDocument;
+      return doc ? (doc.querySelector('svg') || doc.documentElement) : null;
+    }
+
+    // Update the contents of the SVG map according to a state structure.
+    // The state structure represents the game state as reported by the server.
+    // last_action: attack = red/orange outlines; reinforce = green outline. Default: no outline.
+    const BATTLE_STROKE_WIDTH = 1.8;
+    const ATTACKER_OUTLINE = '#ff3333'; // bright red
+    const DEFENDER_OUTLINE = '#ff9900'; // bright orange
+    const REINFORCE_OUTLINE = '#22cc44'; // bright green
+
+    function setPathStroke(path, color, width) {
+      const style = path.getAttribute('style') || '';
+      let s = style.replace(/\bstroke:(?!-)[^;]*/g, `stroke:${color}`);
+      s = s.replace(/\bstroke-width:[^;]*/g, `stroke-width:${width}`);
+      if (!/\bstroke:/.test(s)) s += `;stroke:${color}`;
+      if (!/\bstroke-width:/.test(s)) s += `;stroke-width:${width}`;
+      path.setAttribute('style', s);
+    }
+
+    // the main handler to draw the map according to current game state.
+    function updateMapState(state, lastAction) {
+      const svg = getSvgRoot();
+      if (!svg) return;
+
+      // for every territory...
+      for (const [territoryId, data] of Object.entries(state)) {
+        const group = svg.querySelector(`#${CSS.escape(territoryId)}`);
+        if (!group) continue;
+        const path = group.querySelector('path');
+        const textEl = group.querySelector('text');
+        if (path) {
+
+          // Color the territory based on the owner.
+          const owner = data.owner ?? 0;
+          const color = PLAYER_COLORS[owner % PLAYER_COLORS.length];
+          path.setAttribute('fill', color);
+          const style = path.getAttribute('style') || '';
+          path.setAttribute('style', style.replace(/\bfill:(?!-)[^;]*/g, `fill:${color}`));
+
+          // by default we show no visible outline (to avoid confusion).
+          // If the territory was just reinforced, show its outline as green.
+          // If the territory just attacked, show its outline as red and defender as orange.
+          const isAttacker = lastAction?.type === 'attack' && lastAction.from === territoryId;
+          const isDefender = lastAction?.type === 'attack' && lastAction.to === territoryId;
+          const isReinforced = lastAction?.type === 'reinforce' && lastAction.territory === territoryId;
+          if (isAttacker) {
+            setPathStroke(path, ATTACKER_OUTLINE, BATTLE_STROKE_WIDTH);
+          } else if (isDefender) {
+            setPathStroke(path, DEFENDER_OUTLINE, BATTLE_STROKE_WIDTH);
+          } else if (isReinforced) {
+            setPathStroke(path, REINFORCE_OUTLINE, BATTLE_STROKE_WIDTH);
+          } else {
+            // the deafult is no outline. Maybe this is questionable, but I like the way it looks.
+            setPathStroke(path, 'none', 0);
+          }
+        }
+
+        // We also update the label for the territory.
+        // The default is to just show its number of armies.
+        // But if the territory gained or lost armies (by reinforcment or attack/defend), we show the detla too.
+        let label = String(data.armies ?? 0);
+        if (lastAction && path) {
+          if (lastAction.type === 'attack') {
+            if (lastAction.from === territoryId && lastAction.attacker_losses > 0) {
+              label = `${data.armies ?? 0}(-${lastAction.attacker_losses})`;
+            } else if (lastAction.to === territoryId && lastAction.defender_losses > 0) {
+              label = `${data.armies ?? 0}(-${lastAction.defender_losses})`;
+            }
+          } else if (lastAction.type === 'reinforce' && lastAction.territory === territoryId && lastAction.armies > 0) {
+            label = `${data.armies ?? 0}(+${lastAction.armies})`;
+          }
+        }
+        if (textEl) textEl.textContent = label;
+      }
+    }
+
+    // Update the onscreen message when running.
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    // We also update the indicators to show who's playing and what phase they're in.
+    function updateGameStateIndicators(data) {
+      const turnNumber = data.turn_number ?? 0;
+      const numPlayers = data.num_players ?? 2;
+      const currentPlayer = data.current_player ?? 0;
+      const playerNames = data.player_names ?? null;
+      const phase = (data.phase ?? 'reinforce').toLowerCase();
+
+      const turnEl = document.getElementById('turn-number');
+      if (turnEl) turnEl.textContent = String(turnNumber);
+
+      const playersList = document.getElementById('players-list');
+      playersList.innerHTML = '';
+      for (let i = 0; i < numPlayers; i++) {
+        const div = document.createElement('div');
+        div.textContent = (playerNames && playerNames[i]) ? playerNames[i] : 'Player ' + (i + 1);
+        if (i === currentPlayer) div.style.background = 'green';
+        playersList.appendChild(div);
+      }
+
+      ['reinforce', 'attack', 'fortify'].forEach(p => {
+        const el = document.getElementById('phase-' + p);
+        if (el) {
+          el.style.background = (phase && p === phase) ? 'green' : '';
+        }
+      });
+    }
+
+    // update the UI with the latest game state.
+    function updateUI(data) {
+      updateMapState(data.state || {}, data.last_action);
+      updateGameStateIndicators(data);
+    }
+
+    // send an HTTP POST request to the API.
+    async function apiPost(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text);
+          if (j.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+        } catch (_) {}
+        throw new Error(msg || res.statusText);
+      }
+      return res.json();
+    }
+
+    // tell the server to start a new game.
+    async function apiStart() {
+      const numPlayers = parseInt(document.getElementById('num-players').value, 10);
+      const data = await apiPost('/api/start', { num_players: numPlayers });
+      updateUI(data);
+      setStatus('Game started. Single step or enable free run.');
+    }
+
+    // tell the server to stop the current game.
+    async function apiStop() {
+      await apiPost('/api/stop');
+      updateUI({ turn_number: 0, num_players: 2, current_player: -1, phase: '' });
+      setStatus('Game stopped. Map unchanged. Start again to reset.');
+      if (freeRunTimer) {
+        clearInterval(freeRunTimer);
+        freeRunTimer = null;
+      }
+      freeRunCheckbox.checked = false;
+    }
+
+    // tell the server to step the game forward one "action".
+    async function apiStep() {
+      const data = await apiPost('/api/step');
+      updateUI(data);
+      return data;
+    }
+
+    // Initiate "Free run". This starts an interval timer, which pings the
+    // server to step the game every 1 second (for now).
+    function startFreeRun() {
+      if (freeRunTimer) return;
+      freeRunTimer = setInterval(async () => {
+        try {
+          const data = await apiStep();
+          if (!data || !data.running) {
+            clearInterval(freeRunTimer);
+            freeRunTimer = null;
+            freeRunCheckbox.checked = false;
+            if (data && !data.running) setStatus('Game ended. Press Start Game to play again.');
+          }
+        } catch (e) {
+          clearInterval(freeRunTimer);
+          freeRunTimer = null;
+          freeRunCheckbox.checked = false;
+          setStatus('Error: ' + e.message);
+        }
+      }, 1000);
+    }
+
+    // Clear the interval timer, stopping free run.
+    function stopFreeRun() {
+      if (freeRunTimer) {
+        clearInterval(freeRunTimer);
+        freeRunTimer = null;
+      }
+    }
+
+    function withErrorHandling(fn) {
+      return async () => {
+        try {
+          await fn();
+        } catch (e) {
+          setStatus('Error: ' + e.message);
+        }
+      };
+    }
+
+    // wire up the buttons to the API calls.
+    btnStart.addEventListener('click', withErrorHandling(apiStart));
+    btnStop.addEventListener('click', withErrorHandling(apiStop));
+    btnStep.addEventListener('click', withErrorHandling(apiStep));
+
+    // on free run checkbox change.
+    freeRunCheckbox.addEventListener('change', () => {
+      if (freeRunCheckbox.checked) startFreeRun();
+      else stopFreeRun();
+    });
+
+    setStatus('Press Start Game.');
+  </script>
+</body>
+</html>

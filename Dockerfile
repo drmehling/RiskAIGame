@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all our code into the container on build.
 COPY src/ src/
+COPY static/ static/
 COPY notebooks/ notebooks/
 
 # Default command run when the container starts and nothing else specified.
