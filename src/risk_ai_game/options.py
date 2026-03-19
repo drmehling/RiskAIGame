@@ -15,7 +15,7 @@ class RiskAIGameOptions:
         max_turns: int = 500,
         # Verbose output.
         verbose: bool = True,
-        # TODO: random_seed needs to be supported for reproducibility.
+        # If set, seeds the RNG for reproducible games.
         random_seed: Optional[int] = None,
         # You can provide a function to initialize the board state.
         initial_board_setup: Optional[Callable[[GameState], None]] = None,
