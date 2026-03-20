@@ -1,16 +1,4 @@
-"""Expectiminimax Agent for Risk.
-
-Implements adversarial search with chance nodes to handle the stochastic
-element of dice rolls. The search tree alternates between:
-  - MAX nodes: current player picks the action maximizing expected value
-  - MIN nodes: opponent picks the action minimizing our expected value
-  - CHANCE nodes: dice outcomes weighted by probability
-
-Due to the massive branching factor of Risk, the agent uses:
-  - Depth-limited search
-  - Move ordering and pruning (only top-k moves evaluated)
-  - A heuristic evaluation function for leaf nodes
-"""
+"""Expectiminimax agent for Risk -- adversarial search with dice probabilities."""
 
 import copy
 import random
@@ -19,13 +7,11 @@ from .action import Phase, DeployAction, AttackAction, FortifyAction, EndPhaseAc
 from .game_state import GameState, CONTINENT_BONUSES
 
 
-# Precomputed dice outcome probabilities for attacker vs defender.
-# Key: (attacker_dice, defender_dice) -> list of (attacker_losses, defender_losses, probability)
+# precomputed dice probabilities: (atk_dice, def_dice) -> [(atk_loss, def_loss, prob)]
 DICE_OUTCOMES = {}
 
 
 def _compute_dice_outcomes():
-    """Precompute dice battle probabilities via enumeration."""
     from itertools import product
 
     for n_atk in range(1, 4):  # 1-3 attacker dice
@@ -59,14 +45,7 @@ _compute_dice_outcomes()
 
 
 class ExpectiminimaxAgent(Agent):
-    """Adversarial search agent using expectiminimax with depth limit.
-
-    Args:
-        player_id: The player index this agent controls.
-        max_depth: Maximum search depth (each phase transition = 1 depth).
-        top_k_moves: Only evaluate this many top moves per node to limit branching.
-        name: Optional display name.
-    """
+    """Depth-limited expectiminimax with top-k move pruning."""
 
     def __init__(self, player_id, max_depth=2, top_k_moves=5, name=None):
         super().__init__(player_id, name)
@@ -81,12 +60,8 @@ class ExpectiminimaxAgent(Agent):
         elif game_state.phase == Phase.FORTIFY:
             return self._choose_fortify(game_state)
 
-    # ------------------------------------------------------------------ deploy
-
     def _choose_deploy(self, game_state):
-        """Deploy all armies to the highest-value territory."""
-        # For deploy, use heuristic directly (search branching is too wide
-        # with all possible deploy splits).
+        # deploy uses heuristic directly -- too many possible splits for search
         my_territories = game_state.get_player_territories(self.player_id)
         all_territories = game_state.board.all_territories()
 
@@ -101,7 +76,7 @@ class ExpectiminimaxAgent(Agent):
             if not has_enemy:
                 continue
 
-            # Simulate deploying here and evaluate
+            # try deploying here
             sim = self._copy_state(game_state)
             sim_t = sim.board.get(t.name)
             sim_t.armies += game_state.armies_to_deploy
@@ -114,7 +89,6 @@ class ExpectiminimaxAgent(Agent):
                 best_territory = t.name
 
         if best_territory is None:
-            # Fallback: deploy to territory with most enemy neighbors
             best_territory = max(
                 my_territories,
                 key=lambda t: sum(
@@ -125,17 +99,13 @@ class ExpectiminimaxAgent(Agent):
 
         return DeployAction(best_territory, game_state.armies_to_deploy)
 
-    # ----------------------------------------------------------------- attack
-
     def _choose_attack(self, game_state):
-        """Use expectiminimax search to choose the best attack or end phase."""
         candidates = self._get_attack_candidates(game_state)
 
         if not candidates:
             return EndPhaseAction()
 
         best_action = EndPhaseAction()
-        # Evaluate ending the attack phase
         sim_end = self._copy_state(game_state)
         sim_end.phase = Phase.FORTIFY
         best_value = self._evaluate(sim_end)
@@ -149,7 +119,6 @@ class ExpectiminimaxAgent(Agent):
         return best_action
 
     def _expected_attack_value(self, game_state, attack_action, depth):
-        """Compute expected value of an attack using dice probabilities."""
         attacker = game_state.board.get(attack_action.from_territory)
         defender = game_state.board.get(attack_action.to_territory)
 
@@ -167,7 +136,6 @@ class ExpectiminimaxAgent(Agent):
             sim_defender.armies -= d_loss
 
             if sim_defender.armies <= 0:
-                # Conquered
                 sim_defender.owner = self.player_id
                 moved = attack_action.num_dice
                 sim_attacker.armies -= moved
@@ -183,7 +151,6 @@ class ExpectiminimaxAgent(Agent):
         return expected_value
 
     def _minimax(self, game_state, depth, is_max):
-        """Depth-limited minimax evaluation."""
         winner = game_state.get_winner()
         if winner is not None:
             return 1000.0 if winner == self.player_id else -1000.0
@@ -192,22 +159,19 @@ class ExpectiminimaxAgent(Agent):
             return self._evaluate(game_state)
 
         if game_state.phase == Phase.ATTACK and game_state.current_player == self.player_id:
-            # MAX node
             candidates = self._get_attack_candidates(game_state)
             if not candidates:
                 return self._evaluate(game_state)
 
-            best = self._evaluate(game_state)  # value of ending attack
+            best = self._evaluate(game_state)
             for action in candidates[:self.top_k_moves]:
                 val = self._expected_attack_value(game_state, action, depth)
                 best = max(best, val)
             return best
         else:
-            # For other phases/players, just evaluate
             return self._evaluate(game_state)
 
     def _get_attack_candidates(self, game_state):
-        """Get top-k attack actions sorted by heuristic army ratio."""
         candidates = []
         for t in game_state.get_player_territories(self.player_id):
             if t.armies < 2:
@@ -222,10 +186,7 @@ class ExpectiminimaxAgent(Agent):
         candidates.sort(key=lambda x: x[0], reverse=True)
         return [action for _, action in candidates[: self.top_k_moves]]
 
-    # ---------------------------------------------------------------- fortify
-
     def _choose_fortify(self, game_state):
-        """Move armies from safe interior to most threatened border."""
         my_territories = game_state.get_player_territories(self.player_id)
 
         best_move = None
@@ -239,7 +200,7 @@ class ExpectiminimaxAgent(Agent):
                 for n in src.neighbors
             )
             if src_has_enemies:
-                continue  # don't weaken border
+                continue
 
             for dst in my_territories:
                 if dst.name == src.name:
@@ -266,17 +227,8 @@ class ExpectiminimaxAgent(Agent):
 
         return best_move if best_move else EndPhaseAction()
 
-    # -------------------------------------------------------------- evaluate
-
     def _evaluate(self, game_state):
-        """Heuristic board evaluation from this agent's perspective.
-
-        Components:
-        - Territory count advantage
-        - Army count advantage
-        - Continent control bonuses
-        - Border strength (ratio of our border armies to enemy border armies)
-        """
+        """Board eval: territory count, army count, continent control, border strength."""
         all_territories = game_state.board.all_territories()
         my_territories = [t for t in all_territories if t.owner == self.player_id]
         total = len(all_territories)
@@ -286,15 +238,10 @@ class ExpectiminimaxAgent(Agent):
         if len(my_territories) == total:
             return 1000.0
 
-        # Territory ratio
         territory_score = (len(my_territories) / total) * 20.0
-
-        # Army advantage
         my_armies = sum(t.armies for t in my_territories)
         total_armies = sum(t.armies for t in all_territories)
         army_score = (my_armies / max(1, total_armies)) * 15.0
-
-        # Continent control
         continent_score = 0.0
         continent_counts = {}
         continent_totals = {}
@@ -313,7 +260,6 @@ class ExpectiminimaxAgent(Agent):
             elif owned > ct_total // 2:
                 continent_score += bonus * 0.5
 
-        # Border strength
         border_score = 0.0
         for t in my_territories:
             for n_name in t.neighbors:
@@ -324,11 +270,8 @@ class ExpectiminimaxAgent(Agent):
 
         return territory_score + army_score + continent_score + border_score
 
-    # ----------------------------------------------------------------- utils
-
     @staticmethod
     def _copy_state(game_state):
-        """Deep copy the game state for simulation."""
         sim = GameState.__new__(GameState)
         sim.num_players = game_state.num_players
         sim.current_player = game_state.current_player
