@@ -25,9 +25,36 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from risk_ai_game import game_state_to_render_dict, last_action_to_render_dict
-from risk_ai_game.agent import AggressiveAgent, RandomAgent
+from risk_ai_game.agent import Agent, AggressiveAgent, RandomAgent
+from risk_ai_game.expectiminimax_agent import ExpectiminimaxAgent
 from risk_ai_game.game_state import GameState
 from risk_ai_game.greedy_agent import GreedyAgent
+from risk_ai_game.mcts_agent import MCTSAgent
+
+_AGENT_TYPES: tuple[str, ...] = (
+    "aggressive",
+    "random",
+    "greedy",
+    "expectiminimax",
+    "mcts",
+)
+
+
+def _make_agent(agent_kind: str, player_id: int, display_name: str | None) -> Agent:
+    kind = agent_kind.strip().lower()
+    name = display_name.strip() if display_name and str(display_name).strip() else None
+    if kind == "aggressive":
+        return AggressiveAgent(player_id, name=name)
+    if kind == "random":
+        return RandomAgent(player_id, name=name)
+    if kind == "greedy":
+        return GreedyAgent(player_id, name=name)
+    if kind == "expectiminimax":
+        return ExpectiminimaxAgent(player_id, name=name)
+    if kind == "mcts":
+        return MCTSAgent(player_id, name=name)
+    allowed = ", ".join(_AGENT_TYPES)
+    raise ValueError(f"Unknown agent type {agent_kind!r}. Expected one of: {allowed}")
 
 
 # a nonblocking game runner for the dashboard. Start, step, stop as needed.
@@ -37,25 +64,38 @@ class GameRunner:
     def __init__(self, max_turns: int = 1000):
         self.max_turns = max_turns
         self._game: GameState | None = None
-        self._agents: list[RandomAgent] | None = None
+        self._agents: list[Agent] | None = None
         self._stopped = False
         self._last_action = None
         self._last_result = None
 
-    # Set up a game.
-    # TODO: I want to be careful about how much time we invest in the dashboard as it's a time sink.
-    # Deeper analyses should be done in jupyter notebooks, as they allow zero overhead, reproducable setup.
-    # That said, I think I may in time add a way to set up specific player agents. But not yet.
-    def start(self, num_players: int = 2) -> GameState | None:
+    def start(
+        self,
+        num_players: int = 2,
+        random_seed: int | None = None,
+        player_configs: list[dict] | None = None,
+    ) -> GameState | None:
         if num_players < 2:
             num_players = 2
         self._stopped = False
         self._last_action = None
         self._last_result = None
-        self._agents = [
-            AggressiveAgent(0, name="Aggressive player") if i == 0 else RandomAgent(i)
-            for i in range(num_players)
-        ]
+        if random_seed is not None:
+            random.seed(random_seed)
+        if player_configs is not None:
+            if len(player_configs) != num_players:
+                raise ValueError(
+                    f"Expected {num_players} player slot(s), got {len(player_configs)} in 'players'."
+                )
+            self._agents = [
+                _make_agent(str(c["agent"]), i, c.get("name"))
+                for i, c in enumerate(player_configs)
+            ]
+        else:
+            self._agents = [
+                AggressiveAgent(0, name="Aggressive player") if i == 0 else RandomAgent(i)
+                for i in range(num_players)
+            ]
         self._game = GameState(num_players=num_players)
         self._game.setup_random()
         return self._game
@@ -107,8 +147,15 @@ _game: GameRunner | None = None
 _game_lock = threading.Lock()
 
 
+class PlayerSlot(BaseModel):
+    agent: str
+    name: str | None = None
+
+
 class InitSettings(BaseModel):
     num_players: int = 2
+    random_seed: int | None = None
+    players: list[PlayerSlot] | None = None
 
     def to_dict(self) -> dict:
         return self.model_dump(exclude_none=False)
@@ -150,7 +197,21 @@ def api_start(settings: InitSettings | None = None) -> dict:
     with _game_lock:
         _game = GameRunner(max_turns=1000)
         opts = settings.to_dict() if settings else {}
-        game = _game.start(num_players=opts.get("num_players", 2))
+        num_players = opts.get("num_players", 2)
+        raw_players = opts.get("players")
+        player_configs: list[dict] | None = None
+        if raw_players is not None:
+            player_configs = [
+                {"agent": p["agent"], "name": p.get("name")} for p in raw_players
+            ]
+        try:
+            game = _game.start(
+                num_players=num_players,
+                random_seed=opts.get("random_seed"),
+                player_configs=player_configs,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         return _api_response(game, True)
 
 # on client /api/stop request, stop the game.
