@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Risk Game Demo</title>
+  <title>Risk Dashboard</title>
   <style>
     /* We can improve the general look of the dashboard by adding some simple CSS here. */
   </style>
@@ -61,6 +61,8 @@
     const btnStop = document.getElementById('btn-stop');
     const btnStep = document.getElementById('btn-step');
     const freeRunCheckbox = document.getElementById('free-run');
+    /** Avoid overlapping POST /api/step (double-clicks); server also serializes with a lock. */
+    let stepInFlight = false;
 
     function getSvgRoot() {
       const doc = mapContainer.contentDocument;
@@ -221,9 +223,17 @@
 
     // tell the server to step the game forward one "action".
     async function apiStep() {
-      const data = await apiPost('/api/step');
-      updateUI(data);
-      return data;
+      if (stepInFlight) return null;
+      stepInFlight = true;
+      btnStep.disabled = true;
+      try {
+        const data = await apiPost('/api/step');
+        updateUI(data);
+        return data;
+      } finally {
+        stepInFlight = false;
+        btnStep.disabled = false;
+      }
     }
 
     // Initiate "Free run". This starts an interval timer, which pings the
@@ -233,6 +243,7 @@
       freeRunTimer = setInterval(async () => {
         try {
           const data = await apiStep();
+          if (data === null) return;
           if (!data || !data.running) {
             clearInterval(freeRunTimer);
             freeRunTimer = null;

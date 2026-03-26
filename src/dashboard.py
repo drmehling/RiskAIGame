@@ -15,6 +15,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import random
+import threading
 import traceback
 
 from fastapi import FastAPI, HTTPException
@@ -25,6 +27,8 @@ from pydantic import BaseModel
 from risk_ai_game import game_state_to_render_dict, last_action_to_render_dict
 from risk_ai_game.agent import AggressiveAgent, RandomAgent
 from risk_ai_game.game_state import GameState
+from risk_ai_game.greedy_agent import GreedyAgent
+
 
 # a nonblocking game runner for the dashboard. Start, step, stop as needed.
 # TODO: It might be advisable to move this to its own module in time, but this is fine for now.
@@ -43,6 +47,8 @@ class GameRunner:
     # Deeper analyses should be done in jupyter notebooks, as they allow zero overhead, reproducable setup.
     # That said, I think I may in time add a way to set up specific player agents. But not yet.
     def start(self, num_players: int = 2) -> GameState | None:
+        if num_players < 2:
+            num_players = 2
         self._stopped = False
         self._last_action = None
         self._last_result = None
@@ -95,6 +101,10 @@ def show_500_traceback(request, exc):
     tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     return PlainTextResponse(f"500 Error:\n\n{tb}", status_code=500, media_type="text/plain")
 _game: GameRunner | None = None
+# Uvicorn runs sync route handlers in a thread pool; without a lock, two fast step
+# requests can both read the same GameState, choose actions, then apply in series—
+# the second action may be illegal for the post-first state.
+_game_lock = threading.Lock()
 
 
 class InitSettings(BaseModel):
@@ -105,6 +115,7 @@ class InitSettings(BaseModel):
 
 # All api responses are formatted the same.
 # Basically we return the game state, with some additional metadata.
+# Caller must hold _game_lock when reading mutating _game fields used here.
 def _api_response(game, running: bool) -> dict:
     state = game_state_to_render_dict(game) if game else {}
     last_action = None
@@ -136,41 +147,45 @@ def _api_response(game, running: bool) -> dict:
 @app.post("/api/start")
 def api_start(settings: InitSettings | None = None) -> dict:
     global _game
-    _game = GameRunner(max_turns=1000)
-    opts = settings.to_dict() if settings else {}
-    game = _game.start(num_players=opts.get("num_players", 2))
-    return _api_response(game, True)
+    with _game_lock:
+        _game = GameRunner(max_turns=1000)
+        opts = settings.to_dict() if settings else {}
+        game = _game.start(num_players=opts.get("num_players", 2))
+        return _api_response(game, True)
 
 # on client /api/stop request, stop the game.
 @app.post("/api/stop")
 def api_stop() -> dict:
     global _game
-    if _game is not None:
-        _game.stop()
-        _game = None
+    with _game_lock:
+        if _game is not None:
+            _game.stop()
+            _game = None
     return {"running": False}
 
 # on client /api/state request, return the current game state.
 @app.get("/api/state")
 def api_state() -> dict:
     global _game
-    if _game is None or not _game.is_running():
-        return {"state": {}, "running": False, "last_action": None, "current_player": 0, "phase": "reinforce", "num_players": 2, "turn_number": 0, "player_names": None}
-    game = _game.get_state()
-    return _api_response(game, True)
+    with _game_lock:
+        if _game is None or not _game.is_running():
+            return {"state": {}, "running": False, "last_action": None, "current_player": 0, "phase": "reinforce", "num_players": 2, "turn_number": 0, "player_names": None}
+        game = _game.get_state()
+        return _api_response(game, True)
 
 # on client /api/step request, step the game by one action.
 @app.post("/api/step")
 def api_step() -> dict:
     global _game
-    if _game is None:
-        raise HTTPException(status_code=409, detail="No game; call POST /api/start first.")
-    if not _game.is_running():
-        raise HTTPException(status_code=409, detail="Game is stopped; call POST /api/start to restart.")
-    game, running = _game.step()
-    if game is None:
-        raise HTTPException(status_code=409, detail="Game not running.")
-    return _api_response(game, running)
+    with _game_lock:
+        if _game is None:
+            raise HTTPException(status_code=409, detail="No game; call POST /api/start first.")
+        if not _game.is_running():
+            raise HTTPException(status_code=409, detail="Game is stopped; call POST /api/start to restart.")
+        game, running = _game.step()
+        if game is None:
+            raise HTTPException(status_code=409, detail="Game not running.")
+        return _api_response(game, running)
 
 # serve the static assets.
 app.mount("/assets", StaticFiles(directory=str(ROOT / "src" / "assets")), name="assets")
