@@ -3,9 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Risk Game Demo</title>
+  <title>Risk Dashboard</title>
   <style>
-    /* We can improve the general look of the dashboard by adding some simple CSS here. */
+    #agents-table .player-color-box {
+      display: inline-block;
+      width: 1.15rem;
+      height: 1.15rem;
+      vertical-align: middle;
+      border: 1px solid rgba(0, 0, 0, 0.25);
+      box-sizing: border-box;
+    }
   </style>
 </head>
 <body>
@@ -13,6 +20,10 @@
   <!-- basic start/stop/step buttons. See below for event handlers. -->
   <p class="status" id="status">Press Start Game.</p>
   <div class="controls">
+    <label>
+      Random seed (optional):
+      <input type="text" id="random-seed" inputmode="numeric" pattern="-?[0-9]*" autocomplete="off" placeholder="e.g. 1234" title="Integer seed for reproducible setup and play. Can be empty" style="width: 6em;" />
+    </label>
     <label>
       Players:
       <select id="num-players">
@@ -30,6 +41,17 @@
       <input type="checkbox" id="free-run" /> Free run (1 step/sec)
     </label>
   </div>
+  <table id="agents-table" aria-label="Per-player agent setup">
+    <thead>
+      <tr>
+        <th scope="col" class="agents-col-color" title="Territory color on map"></th>
+        <th scope="col">Player</th>
+        <th scope="col">Agent</th>
+        <th scope="col">Name (optional)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
   <!-- The SVG map updated at runtime with the game state. -->
   <object id="map-container" data="/assets/risk.map.svg" type="image/svg+xml"></object>
 
@@ -53,6 +75,7 @@
   </div>
 
   <script>
+    /* player colors match those in risk_ai_game/render.py */
     const PLAYER_COLORS = ['#C94A44', '#4C78A8', '#59A14F', '#E3B23C', '#8E6BBE', '#2F2F2F'];
     let freeRunTimer = null;
     const mapContainer = document.getElementById('map-container');
@@ -61,6 +84,108 @@
     const btnStop = document.getElementById('btn-stop');
     const btnStep = document.getElementById('btn-step');
     const freeRunCheckbox = document.getElementById('free-run');
+    const seedInput = document.getElementById('random-seed');
+    const numPlayersSelect = document.getElementById('num-players');
+    /** Avoid overlapping POST /api/step (double-clicks); server also serializes with a lock. */
+    let stepInFlight = false;
+    let gameRunning = false;
+
+    // The current available agent types.
+    // TODO: update this as agents change.
+    const AGENT_OPTIONS = [
+      { value: 'aggressive', label: 'Aggressive' },
+      { value: 'random', label: 'Random' },
+      { value: 'greedy', label: 'Greedy' },
+      { value: 'expectiminimax', label: 'Expectiminimax' },
+      { value: 'mcts', label: 'MCTS' },
+    ];
+
+    function readAgentSlots() {
+      const rows = document.querySelectorAll('#agents-table tbody tr');
+      const out = [];
+      rows.forEach(tr => {
+        const sel = tr.querySelector('.agent-type');
+        const nameInp = tr.querySelector('.agent-name');
+        if (sel) out.push({ type: sel.value, name: nameInp ? nameInp.value : '' });
+      });
+      return out;
+    }
+
+    // build the agent table with the correct number of rows for player count.
+    // this is somewhat complex, but it preserves previous table contents when the player count changes.
+    function buildAgentTable(n) {
+      const prev = readAgentSlots();
+      const tbody = document.querySelector('#agents-table tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      for (let i = 0; i < n; i++) {
+        const p = prev[i];
+        const agentVal = p ? p.type : (i === 0 ? 'aggressive' : 'random');
+        const nameVal = p && p.name != null ? p.name : '';
+        const tr = document.createElement('tr');
+        const seatColor = PLAYER_COLORS[i % PLAYER_COLORS.length];
+        const tdColor = document.createElement('td');
+        tdColor.className = 'agents-col-color';
+        const box = document.createElement('span');
+        box.className = 'player-color-box';
+        box.style.backgroundColor = seatColor;
+        box.title = seatColor;
+        tdColor.appendChild(box);
+        const tdPlayer = document.createElement('td');
+        tdPlayer.textContent = (i + 1);
+        const tdAgent = document.createElement('td');
+        const sel = document.createElement('select');
+        sel.className = 'agent-type';
+        AGENT_OPTIONS.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.label;
+          if (opt.value === agentVal) o.selected = true;
+          sel.appendChild(o);
+        });
+        tdAgent.appendChild(sel);
+        const tdName = document.createElement('td');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'agent-name';
+        inp.placeholder = 'optional';
+        inp.value = nameVal;
+        inp.autocomplete = 'off';
+        tdName.appendChild(inp);
+        tr.appendChild(tdColor);
+        tr.appendChild(tdPlayer);
+        tr.appendChild(tdAgent);
+        tr.appendChild(tdName);
+        tbody.appendChild(tr);
+      }
+      setSetupControlsDisabled(gameRunning);
+    }
+
+    // make the agent table and random seed input disabled when the game is running.
+    function setSetupControlsDisabled(disabled) {
+      if (numPlayersSelect) numPlayersSelect.disabled = disabled;
+      if (seedInput) seedInput.disabled = disabled;
+      document.querySelectorAll('#agents-table .agent-type, #agents-table .agent-name').forEach(el => {
+        el.disabled = disabled;
+      });
+    }
+
+    // get the current player/agent assignments, used to start a game.
+    function collectPlayerPayloads() {
+      const tbody = document.querySelector('#agents-table tbody');
+      const players = [];
+      if (!tbody) return players;
+      tbody.querySelectorAll('tr').forEach(tr => {
+        const sel = tr.querySelector('.agent-type');
+        const nameInp = tr.querySelector('.agent-name');
+        const agent = sel.value;
+        const o = { agent };
+        const n = nameInp.value.trim();
+        if (n) o.name = n;
+        players.push(o);
+      });
+      return players;
+    }
 
     function getSvgRoot() {
       const doc = mapContainer.contentDocument;
@@ -178,6 +303,8 @@
     function updateUI(data) {
       updateMapState(data.state || {}, data.last_action);
       updateGameStateIndicators(data);
+      gameRunning = data.running === true;
+      setSetupControlsDisabled(gameRunning);
     }
 
     // send an HTTP POST request to the API.
@@ -201,16 +328,37 @@
 
     // tell the server to start a new game.
     async function apiStart() {
-      const numPlayers = parseInt(document.getElementById('num-players').value, 10);
-      const data = await apiPost('/api/start', { num_players: numPlayers });
-      updateUI(data);
-      setStatus('Game started. Single step or enable free run.');
+      const numPlayers = parseInt(numPlayersSelect.value, 10);
+      const seedRaw = (seedInput && seedInput.value.trim()) || '';
+      const body = { num_players: numPlayers };
+      if (seedRaw !== '') {
+        if (!/^-?\d+$/.test(seedRaw)) {
+          setStatus('Random seed must be an integer (optional).');
+          return;
+        }
+        body.random_seed = parseInt(seedRaw, 10);
+      }
+      const players = collectPlayerPayloads();
+      if (players.length !== numPlayers) {
+        setStatus('Player/agent rows do not match player count.');
+        return;
+      }
+      body.players = players;
+      setSetupControlsDisabled(true);
+      try {
+        const data = await apiPost('/api/start', body);
+        updateUI(data);
+        setStatus('Game started. Single step or enable free run.');
+      } catch (e) {
+        setSetupControlsDisabled(false);
+        throw e;
+      }
     }
 
     // tell the server to stop the current game.
     async function apiStop() {
       await apiPost('/api/stop');
-      updateUI({ turn_number: 0, num_players: 2, current_player: -1, phase: '' });
+      updateUI({ turn_number: 0, num_players: 2, current_player: -1, phase: '', running: false });
       setStatus('Game stopped. Map unchanged. Start again to reset.');
       if (freeRunTimer) {
         clearInterval(freeRunTimer);
@@ -221,9 +369,17 @@
 
     // tell the server to step the game forward one "action".
     async function apiStep() {
-      const data = await apiPost('/api/step');
-      updateUI(data);
-      return data;
+      if (stepInFlight) return null;
+      stepInFlight = true;
+      btnStep.disabled = true;
+      try {
+        const data = await apiPost('/api/step');
+        updateUI(data);
+        return data;
+      } finally {
+        stepInFlight = false;
+        btnStep.disabled = false;
+      }
     }
 
     // Initiate "Free run". This starts an interval timer, which pings the
@@ -233,6 +389,7 @@
       freeRunTimer = setInterval(async () => {
         try {
           const data = await apiStep();
+          if (data === null) return;
           if (!data || !data.running) {
             clearInterval(freeRunTimer);
             freeRunTimer = null;
@@ -271,13 +428,35 @@
     btnStop.addEventListener('click', withErrorHandling(apiStop));
     btnStep.addEventListener('click', withErrorHandling(apiStep));
 
+    numPlayersSelect.addEventListener('change', () => {
+      buildAgentTable(parseInt(numPlayersSelect.value, 10));
+    });
+
     // on free run checkbox change.
     freeRunCheckbox.addEventListener('change', () => {
       if (freeRunCheckbox.checked) startFreeRun();
       else stopFreeRun();
     });
 
-    setStatus('Press Start Game.');
+    async function init() {
+      buildAgentTable(parseInt(numPlayersSelect.value, 10));
+      try {
+        const res = await fetch('/api/state');
+        if (res.ok) {
+          const data = await res.json();
+          const np = data.num_players ?? parseInt(numPlayersSelect.value, 10);
+          numPlayersSelect.value = String(np);
+          buildAgentTable(np);
+          updateUI(data);
+          if (data.running) {
+            setStatus('Game in progress. Single step or enable free run.');
+            return;
+          }
+        }
+      } catch (_) {}
+      setStatus('Press Start Game.');
+    }
+    init();
   </script>
 </body>
 </html>
