@@ -298,19 +298,25 @@ class ExpectiminimaxAgent2(Agent):
         return float(self._reinforcement_count(game_state, self.player_id))
 
     def _reinforcement_count(self, game_state, player_id):
-        all_territories = game_state.board.all_territories()
-        my_territories = [t for t in all_territories if t.owner == player_id]
+        territories = game_state.board.territories.values()
+        continent_sizes = game_state.board.continent_sizes()
 
-        if not my_territories:
+        owned_count = 0
+        owned_by_continent = {c: 0 for c in continent_sizes}
+
+        for t in territories:
+            if t.owner == player_id:
+                owned_count += 1
+                owned_by_continent[t.continent] += 1
+
+        if owned_count == 0:
             return 0
 
-        territory_bonus = max(3, len(my_territories) // 3)
+        territory_bonus = max(3, owned_count // 3)
 
         continent_bonus = 0
-        continents = {t.continent for t in all_territories}
-        for continent in continents:
-            continent_territories = [t for t in all_territories if t.continent == continent]
-            if continent_territories and all(t.owner == player_id for t in continent_territories):
+        for continent, count in owned_by_continent.items():
+            if count == continent_sizes[continent]:
                 continent_bonus += CONTINENT_BONUSES.get(continent, 0)
 
         return territory_bonus + continent_bonus
@@ -420,11 +426,5 @@ class ExpectiminimaxAgent2(Agent):
         sim.armies_to_deploy = game_state.armies_to_deploy
         sim.turn_number = game_state.turn_number
 
-        from .board import Board
-        sim.board = Board()
-        for name, t in game_state.board.territories.items():
-            sim_t = sim.board.get(name)
-            sim_t.owner = t.owner
-            sim_t.armies = t.armies
-
+        sim.board = game_state.board.copy_state()
         return sim

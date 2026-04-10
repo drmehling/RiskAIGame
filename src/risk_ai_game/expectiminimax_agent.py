@@ -279,11 +279,5 @@ class ExpectiminimaxAgent(Agent):
         sim.armies_to_deploy = game_state.armies_to_deploy
         sim.turn_number = game_state.turn_number
 
-        from .board import Board
-        sim.board = Board()
-        for name, t in game_state.board.territories.items():
-            sim_t = sim.board.get(name)
-            sim_t.owner = t.owner
-            sim_t.armies = t.armies
-
+        sim.board = game_state.board.copy_state()
         return sim

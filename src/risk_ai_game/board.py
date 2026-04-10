@@ -54,5 +54,22 @@ class Board:
     def get(self, name):
         return self.territories.get(name)
 
+    def copy_state(self):
+        new = Board.__new__(Board)
+        new.territories = {
+            name: Territory(t.name, t.continent, t.neighbors, t.owner, t.armies)
+            for name, t in self.territories.items()
+        }
+        new._continent_sizes = self.continent_sizes()
+        return new
+
+    def continent_sizes(self):
+        if not hasattr(self, "_continent_sizes"):
+            sizes = {}
+            for t in self.territories.values():
+                sizes[t.continent] = sizes.get(t.continent, 0) + 1
+            self._continent_sizes = sizes
+        return self._continent_sizes
+
     def all_territories(self):
         return list(self.territories.values())
