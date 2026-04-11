@@ -4,6 +4,85 @@ director Albert Lamorisse as La *Conquête du Monde*[^risk-wiki]. It was
 subsequently sold to Parker Brothers in America and has become one of the most
 successful board games of all time. Game rules are widely available and
 standardized[^risk-rules].
+
+## Build and Run
+
+### Build the Docker Image
+
+Required since we're not currently pulling a pre-built image off a server. 
+
+```bash
+docker build -t risk .
+```
+
+In the future we might provide a pre-built image to make running easier if we're inclined.
+
+### Run the Docker Container (default entry point)
+
+Runs `src/main.py`. Use `--rm` so the container is removed when it exits:
+
+The default entry point is specified in the `Dockerfile`. Change as needed.
+
+```bash
+docker run --rm risk
+```
+
+### Edit/Run Local Files Mounted to the Container (run without rebuilding container)
+
+If we mount the local source directories into the Docker container we can edit and run them without having to rebuild the container. If we start `bash` in the container we can then iteratively edit/run/edit for faster development if you want to do that.
+
+```bash
+docker run --rm -it -v "$(pwd):/app" -w /app risk bash
+```
+
+### To Run Specific Python Files (not necessarily the default)
+
+With no extra arguments:
+
+```bash
+docker run --rm risk python src/your_script.py
+```
+
+With optional arguments passed to your script:
+
+```bash
+docker run --rm risk python src/your_script.py --option value
+```
+
+### Running the Dashboard App
+
+![Dashboard](./img/dashboard.png)
+
+Run the web dashboard in the container, which we make available on port 8000, though it could be any.
+
+```bash
+docker run --rm -p 127.0.0.1:8000:8000 risk uvicorn src.dashboard:app --host 0.0.0.0 --port 8000
+```
+
+Then open http://localhost:8000 in your browser.
+
+### to Run Jupyter Notebooks
+
+Start Jupyter in the container and expose port 8888 (`--rm` removes the container when you stop it):
+
+```bash
+docker run --rm -p 127.0.0.1:8888:8888 risk \
+    jupyter notebook --ip=0.0.0.0 --allow-root \
+    --NotebookApp.token='' --NotebookApp.password=''
+```
+
+Then:
+
+1. Open a browser and go to **http://localhost:8888**. You should something like:
+
+![jupyter file tree](./img/jupyter-tree.png)
+
+2. In the file browser, open **notebooks** → **example.ipynb** (or whatever you file wish), and run the cells as normal.
+
+![jupyter example](./img/jupyter-example.png)
+
+The command above circumvents the use of tokens/password for simplicity. If you want to use them, then remove those arguments and when for a token, copy the `?token=...` URL from the terminal output and use that, or paste the token into the login field.
+
 # General GamePlay Description
 A Risk game is played on a board arranged like a world map with 42 territories.
 ![Risk map image](./img/risk-map.png)[^risk-strategy-mit]
@@ -144,83 +223,6 @@ analyses/graphs for various game configurations. For example: do an analysis of
 This would allow reviewers to set up gameplay parameters via a browser window,
 start games and view them as they progress. Additional debug information may also
 be presented.
-
-## Build and Run
-
-### Build the Docker Image
-
-Required since we're not currently pulling a pre-built image off a server. 
-
-```bash
-docker build -t risk .
-```
-
-In the future we might provide a pre-built image to make running easier if we're inclined.
-
-### Run the Docker Container (default entry point)
-
-Runs `src/main.py`. Use `--rm` so the container is removed when it exits:
-
-The default entry point is specified in the `Dockerfile`. Change as needed.
-
-```bash
-docker run --rm risk
-```
-
-### Edit/Run Local Files Mounted to the Container (run without rebuilding container)
-
-If we mount the local source directories into the Docker container we can edit and run them without having to rebuild the container. If we start `bash` in the container we can then iteratively edit/run/edit for faster development if you want to do that.
-
-```bash
-docker run --rm -it -v "$(pwd):/app" -w /app risk bash
-```
-
-### To Run Specific Python Files (not necessarily the default)
-
-With no extra arguments:
-
-```bash
-docker run --rm risk python src/your_script.py
-```
-
-With optional arguments passed to your script:
-
-```bash
-docker run --rm risk python src/your_script.py --option value
-```
-
-### Running the Dashboard App
-
-Run the web dashboard in the container, which we make available on port 8000, though it could be any.
-
-```bash
-docker run --rm -p 127.0.0.1:8000:8000 risk uvicorn src.dashboard:app --host 0.0.0.0 --port 8000
-```
-
-Then open http://localhost:8000 in your browser.
-
-### Run the example Jupyter notebook
-
-Start Jupyter in the container and expose port 8888 (`--rm` removes the container when you stop it):
-
-```bash
-docker run --rm -p 127.0.0.1:8888:8888 risk \
-    jupyter notebook --ip=0.0.0.0 --allow-root \
-    --NotebookApp.token='' --NotebookApp.password=''
-```
-
-Then:
-
-1. Open a browser and go to **http://localhost:8888**. You should something like:
-
-![jupyter file tree](./img/jupyter-tree.png)
-
-2. In the file browser, open **notebooks** → **example.ipynb** (or whatever you file wish), and run the cells as normal.
-
-![jupyter example](./img/jupyter-example.png)
-
-The command above circumvents the use of tokens/password for simplicity. If you want to use them, then remove those arguments and when for a token, copy the `?token=...` URL from the terminal output and use that, or paste the token into the login field.
-
 
 # Citations and Other Sources
 [^risk-wiki]: https://en.wikipedia.org/wiki/Risk_(game)

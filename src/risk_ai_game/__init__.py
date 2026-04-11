@@ -4,6 +4,7 @@ from risk_ai_game.action import Phase, DeployAction, AttackAction, FortifyAction
 from risk_ai_game.agent import Agent, RandomAgent, AggressiveAgent
 from risk_ai_game.greedy_agent import GreedyAgent
 from risk_ai_game.expectiminimax_agent import ExpectiminimaxAgent
+from risk_ai_game.expectiminimax_agent_2 import ExpectiminimaxAgent2
 from risk_ai_game.mcts_agent import MCTSAgent
 from risk_ai_game.board import Board
 from risk_ai_game.game_state import GameState, CONTINENT_BONUSES
