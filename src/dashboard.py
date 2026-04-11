@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from risk_ai_game import game_state_to_render_dict, last_action_to_render_dict
 from risk_ai_game.agent import Agent, AggressiveAgent, RandomAgent
 from risk_ai_game.expectiminimax_agent import ExpectiminimaxAgent
+from risk_ai_game.expectiminimax_agent_2 import ExpectiminimaxAgent2
 from risk_ai_game.game_state import GameState
 from risk_ai_game.greedy_agent import GreedyAgent
 from risk_ai_game.mcts_agent import MCTSAgent
@@ -36,6 +37,7 @@ _AGENT_TYPES: tuple[str, ...] = (
     "random",
     "greedy",
     "expectiminimax",
+    "expectiminimax2",
     "mcts",
 )
 
@@ -51,6 +53,8 @@ def _make_agent(agent_kind: str, player_id: int, display_name: str | None) -> Ag
         return GreedyAgent(player_id, name=name)
     if kind == "expectiminimax":
         return ExpectiminimaxAgent(player_id, name=name)
+    if kind == "expectiminimax2":
+        return ExpectiminimaxAgent2(player_id, max_depth=3, top_k=3, name=name)
     if kind == "mcts":
         return MCTSAgent(player_id, name=name)
     allowed = ", ".join(_AGENT_TYPES)
