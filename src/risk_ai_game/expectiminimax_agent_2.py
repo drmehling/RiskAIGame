@@ -59,25 +59,32 @@ class ExpectiminimaxAgent2(Agent):
 
         greedy_action = actions[0]
         best_action = greedy_action
-        best_value = self._action_value(game_state, greedy_action, depth=0)
+        # implementing alpha-beta pruning
+        # alpha is the best value found so far for the maximizing player
+        # beta is the best value found so far for the minimizing player
+        alpha = float("-inf")
+        beta = float("inf")
+        best_value = self._action_value(game_state, greedy_action, 0, alpha, beta)
+        alpha = best_value
 
         for action in actions[1:]:
-            value = self._action_value(game_state, action, depth=0)
+            value = self._action_value(game_state, action, 0, alpha, beta)
             if value > best_value:
                 best_value = value
                 best_action = action
+            alpha = max(alpha, value)
 
         return best_action
 
-    def _action_value(self, game_state, action, depth):
+    def _action_value(self, game_state, action, depth, alpha, beta):
         if isinstance(action, AttackAction):
-            return self._expected_attack_value(game_state, action, depth)
+            return self._expected_attack_value(game_state, action, depth, alpha, beta)
 
         sim = self._apply_action(game_state, action)
-        return self._search(sim, depth + 1)
+        return self._search(sim, depth + 1, alpha, beta)
 
     # the primary recursive search function.
-    def _search(self, game_state, depth):
+    def _search(self, game_state, depth, alpha, beta):
         winner = game_state.get_winner()
         if winner is not None:
             return 1000.0 if winner == self.player_id else -1000.0
@@ -92,19 +99,28 @@ class ExpectiminimaxAgent2(Agent):
         is_max = (game_state.current_player == self.player_id)
 
         if is_max:
-            best = float("-inf")
+            # accrue the best alpha value.
+            v = float("-inf")
             for action in actions:
-                best = max(best, self._action_value(game_state, action, depth))
-            return best
+                v = max(v, self._action_value(game_state, action, depth, alpha, beta))
+                alpha = max(alpha, v)
+                # bail if best score is already better than the worst score.
+                if alpha >= beta:
+                    break
+            return v
         else:
-            best = float("inf")
+            v = float("inf")
             for action in actions:
-                best = min(best, self._action_value(game_state, action, depth))
-            return best
+                v = min(v, self._action_value(game_state, action, depth, alpha, beta))
+                beta = min(beta, v)
+                # bail if best score is already worse than the best score.
+                if beta <= alpha:
+                    break
+            return v
 
     # the expected value calculation for the attack action.
     # Primary implementation of the expected value calculation for the attack action.
-    def _expected_attack_value(self, game_state, action, depth):
+    def _expected_attack_value(self, game_state, action, depth, alpha, beta):
         attacker = game_state.board.get(action.from_territory)
         defender = game_state.board.get(action.to_territory)
 
@@ -143,7 +159,7 @@ class ExpectiminimaxAgent2(Agent):
                 sim_attacker.armies -= move_armies
                 sim_defender.armies = move_armies
 
-            total += prob * self._search(sim, depth + 1)
+            total += prob * self._search(sim, depth + 1, alpha, beta)
 
         return total
 
